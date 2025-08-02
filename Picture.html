@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Picture Reveal Game</title>
+<style>
+  /* --- CSS from earlier --- */
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #1a1a1a;
+    color: white;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .main-layout {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 2rem;
+    max-width: 100vw;
+    padding: 1rem;
+    flex-wrap: wrap;
+  }
+  .grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 10px;
+    width: 90vw;
+    max-width: 600px;
+    margin: auto;
+    padding: 10px;
+    aspect-ratio: 5 / 4; /* maintain grid shape */
+  }
+  .grid img {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 0;
+    border-radius: 10px;
+    user-select: none;
+  }
+  .square {
+    background-color: #2a2a2a;
+    border-radius: 10px;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3.2rem;
+    font-weight: bold;
+    color: white;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    z-index: 1;
+  }
+  .square.even {
+    background-color: #3e8e41; /* Deep green */
+  }
+  .square:not(.even) {
+    background-color: #6fcf97; /* Lighter green */
+  }
+  .square.revealed {
+    filter: brightness(0);
+    pointer-events: none;
+  }
+  .number {
+    transform: scale(1);
+    transition: transform 0.2s ease;
+    display: inline-block;
+  }
+  .number.grow {
+    transform: scale(1.25);
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1.2rem;
+    justify-content: flex-start;
+    align-items: center;
+  }
+  .control-btn {
+    background: #333;
+    color: gold;
+    font-size: 1.2rem;
+    font-weight: bold;
+    border: 2px solid gold;
+    border-radius: 12px;
+    padding: 12px 20px;
+    width: 180px;
+    height: 52px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: transform 0.3s ease;
+    text-align: center;
+  }
+  .control-btn:active .icon {
+    animation: spin 5s linear;
+  }
+  .icon {
+    display: inline-block;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @media (max-width: 800px) {
+    .main-layout {
+      flex-direction: column;
+      align-items: center;
+    }
+    .controls {
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .control-btn {
+      width: 140px;
+      height: 48px;
+      font-size: 1rem;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="main-layout">
+  <div class="grid" id="grid">
+    <img src="https://picsum.photos/id/1025/600/480" alt="Hidden Picture" draggable="false" />
+  </div>
+  <div class="controls">
+    <button id="new-game" class="control-btn">
+      <span class="icon">🔄</span> New Game
+    </button>
+    <button id="reveal-all" class="control-btn">
+      <span class="icon">👁️</span> Reveal All
+    </button>
+    <button id="kiosk-mode" class="control-btn">
+      <span class="icon">🖥️</span> Kiosk Mode
+    </button>
+  </div>
+</div>
+
+<script>
+  const TOTAL_SQUARES = 20;
+  const grid = document.getElementById("grid");
+  const newGameBtn = document.getElementById("new-game");
+  const revealAllBtn = document.getElementById("reveal-all");
+  const kioskModeBtn = document.getElementById("kiosk-mode");
+  const picture = grid.querySelector('img');
+
+  let starIndex;
+
+  function createGrid() {
+    // Remove any old squares
+    const oldSquares = grid.querySelectorAll('.square');
+    oldSquares.forEach(sq => grid.removeChild(sq));
+
+    starIndex = Math.floor(Math.random() * TOTAL_SQUARES);
+    const indices = [...Array(TOTAL_SQUARES).keys()];
+
+    indices.forEach((i) => {
+      const square = document.createElement("div");
+      square.classList.add("square");
+      if (i % 2 === 0) square.classList.add("even");
+      square.dataset.index = i;
+      square.addEventListener("click", () => revealSquare(square));
+      grid.appendChild(square);
+    });
+
+    revealNumbersSequentially();
+  }
+
+  function revealNumbersSequentially() {
+    const squares = Array.from(document.querySelectorAll(".square"));
+    const sequence = [...Array(squares.length).keys()];
+    const delays = sequence.map(() => Math.random());
+    const sorted = sequence
+      .map((i, idx) => ({ i, delay: delays[idx] }))
+      .sort((a, b) => a.delay - b.delay);
+
+    sorted.forEach((item, idx) => {
+      setTimeout(() => {
+        const square = squares[item.i];
+        const number = document.createElement("span");
+        number.classList.add("number", "grow");
+        number.textContent = item.i + 1;
+        square.appendChild(number);
+        setTimeout(() => number.classList.remove("grow"), 200);
+      }, (idx / TOTAL_SQUARES) * 4000);
+    });
+  }
+
+  function revealSquare(square) {
+    if (square.classList.contains("revealed")) return;
+    const index = parseInt(square.dataset.index);
+    square.classList.add("revealed");
+
+    if (index === starIndex) {
+      const star = document.createElement("div");
+      star.textContent = "★";
+      star.style.position = "absolute";
+      star.style.fontSize = "10rem";
+      star.style.color = "gold";
+      star.style.transition = "all 1s ease";
+      document.body.appendChild(star);
+
+      const rect = square.getBoundingClientRect();
+      star.style.left = `${rect.left + rect.width / 2}px`;
+      star.style.top = `${rect.top + rect.height / 2}px`;
+      star.style.transform = "translate(-50%, -50%)";
+
+      setTimeout(() => {
+        star.style.left = "50%";
+        star.style.top = "50%";
+        star.style.transform = "translate(-50%, -50%) scale(2) rotate(720deg)";
+      }, 50);
+
+      setTimeout(() => document.body.removeChild(star), 2000);
+    }
+  }
+
+  function revealAll() {
+    document.querySelectorAll(".square").forEach((square) => {
+      revealSquare(square);
+    });
+  }
+
+  function rotateButton(button) {
+    button.classList.add("rotate");
+    setTimeout(() => button.classList.remove("rotate"), 5000);
+  }
+
+  function toggleKioskMode() {
+    const elem = document.documentElement;
+    if (!document.fullscreenElement) {
+      elem.requestFullscreen().catch((err) => {
+        alert(`Error attempting to enable fullscreen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  newGameBtn.addEventListener("click", () => {
+    rotateButton(newGameBtn);
+    createGrid();
+  });
+
+  revealAllBtn.addEventListener("click", () => {
+    rotateButton(revealAllBtn);
+    revealAll();
+  });
+
+  kioskModeBtn.addEventListener("click", () => {
+    rotateButton(kioskModeBtn);
+    toggleKioskMode();
+  });
+
+  // Initial setup
+  createGrid();
+</script>
+
+</body>
+</html>
