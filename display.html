@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Picture Reveal Display</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a1a;
+      color: white;
+      overflow: hidden;
+      height: 100vh;
+    }
+    .grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      grid-template-rows: repeat(4, 1fr);
+      width: 100vw;
+      height: 100vh;
+      aspect-ratio: 5 / 4;
+      border-radius: 10px;
+      overflow: hidden;
+      user-select: none;
+    }
+    .grid img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .square {
+      background: #2a2a2a;
+      border: 1px solid #1a1a1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: default;
+      transition: opacity 2s ease;
+      z-index: 2;
+      position: relative;
+    }
+    .square.revealed {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .square.even { background-color: #3e8e41; }
+    .square:not(.even) { background-color: #6fcf97; }
+
+    .number {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      user-select: none;
+      font-weight: bold;
+      color: white; /* White numbers for display version */
+      font-size: 5.5rem; /* Larger for visibility */
+      pointer-events: none;
+      opacity: 1;
+      transition: opacity 1.5s ease;
+      line-height: 1;
+    }
+
+    #star {
+      position: fixed;
+      font-size: 10rem;
+      color: gold;
+      text-shadow: -2px -2px 5px #000, 2px -2px 5px #000, -2px 2px 5px #000, 2px 2px 5px #000;
+      pointer-events: none;
+      user-select: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: all 1s ease, opacity 1s ease;
+      filter: drop-shadow(0 0 8px gold);
+    }
+  </style>
+</head>
+<body>
+<div class="grid" id="grid">
+  <img id="hiddenImage" src="" alt="Hidden picture" />
+</div>
+<script>
+  const TOTAL_SQUARES = 20;
+  const grid = document.getElementById("grid");
+  const hiddenImage = document.getElementById("hiddenImage");
+  const channel = new BroadcastChannel('picture-reveal');
+
+  let starIndex;
+  let revealedSquares = [];
+
+  channel.onmessage = (e) => {
+    const data = e.data;
+    if (data.type === 'newGame') {
+      setupGrid(data.image, data.starIndex, []);
+    } else if (data.type === 'revealSquare') {
+      revealSquare(document.querySelector(`.square[data-index='${data.index}']`), true);
+    } else if (data.type === 'revealAll') {
+      revealAll(true);
+    } else if (data.type === 'showStar') {
+      showStar(document.querySelector(`.square[data-index='${data.index}']`));
+    } else if (data.type === 'syncState') {
+      setupGrid(data.image, data.starIndex, data.revealed);
+    }
+  };
+
+  function setupGrid(image, star, revealed = []) {
+    grid.querySelectorAll('.square').forEach(el => el.remove());
+    hiddenImage.src = image;
+    starIndex = star;
+    revealedSquares = [...revealed];
+    for (let i = 0; i < TOTAL_SQUARES; i++) {
+      const square = document.createElement('div');
+      square.className = 'square';
+      if (i % 2 === 0) square.classList.add('even');
+      square.dataset.index = i;
+
+      const number = document.createElement('span');
+      number.className = 'number';
+      number.textContent = (i + 1);
+      square.appendChild(number);
+
+      if (revealed.includes(i)) {
+        square.classList.add('revealed');
+        number.style.opacity = '0';
+      }
+
+      grid.appendChild(square);
+    }
+  }
+
+  function revealSquare(square, remote = false) {
+    if (!square || square.classList.contains('revealed')) return;
+    square.classList.add('revealed');
+    const number = square.querySelector('.number');
+    if (number) {
+      number.style.transition = 'opacity 2s ease';
+      number.style.opacity = '0';
+    }
+    setTimeout(() => {
+      square.style.opacity = '0';
+    }, 2000);
+    if (parseInt(square.dataset.index) === starIndex) showStar(square);
+  }
+
+  function revealAll(remote = false) {
+    document.querySelectorAll('.square').forEach(sq => {
+      if (!sq.classList.contains('revealed')) {
+        revealSquare(sq, remote);
+      }
+    });
+  }
+
+  function showStar(square) {
+    const existing = document.getElementById('star');
+    if (existing) existing.remove();
+
+    const star = document.createElement('div');
+    star.id = 'star';
+    star.textContent = '★';
+    document.body.appendChild(star);
+
+    const rect = square.getBoundingClientRect();
+    star.style.left = `${rect.left + rect.width / 2}px`;
+    star.style.top = `${rect.top + rect.height / 2}px`;
+    star.style.transform = 'translate(-50%, -50%) scale(1)';
+    star.style.opacity = '1';
+
+    // Grow to large and center
+    setTimeout(() => {
+      star.style.transition = 'all 1s ease';
+      star.style.left = `${window.innerWidth / 2}px`;
+      star.style.top = `${window.innerHeight / 2}px`;
+      star.style.transform = 'translate(-50%, -50%) scale(2)';
+    }, 50);
+
+    // Teeter (3s)
+    setTimeout(() => {
+      star.style.transition = 'none';
+      star.style.animation = 'teeter 3s ease-in-out forwards';
+    }, 1050);
+
+    // Fly to resting place (and fade out immediately after)
+    setTimeout(() => {
+      star.style.animation = 'none';
+      const controlsX = window.innerWidth * 0.1; // Approx left side
+      const controlsY = window.innerHeight - 80; // Near bottom
+      star.style.transition = 'all 1.5s ease';
+      star.style.left = `${controlsX}px`;
+      star.style.top = `${controlsY}px`;
+      star.style.transform = 'translate(-50%, -50%) scale(1)';
+    }, 4050);
+
+    // Fade out as soon as it arrives
+    setTimeout(() => {
+      star.style.transition = 'opacity 1s ease';
+      star.style.opacity = '0';
+    }, 5550);
+
+    // Remove from DOM
+    setTimeout(() => {
+      star.remove();
+    }, 6550);
+  }
+
+  // Teeter animation keyframes
+  const styleSheet = document.createElement("style");
+  styleSheet.textContent = `
+    @keyframes teeter {
+      0%, 100% { transform: translate(-50%, -50%) scale(2); }
+      25% { transform: translate(-50%, -50%) scale(2) rotate(3deg); }
+      50% { transform: translate(-50%, -50%) scale(2) rotate(-3deg); }
+      75% { transform: translate(-50%, -50%) scale(2) rotate(3deg); }
+    }
+  `;
+  document.head.appendChild(styleSheet);
+</script>
+</body>
+</html>
