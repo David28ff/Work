@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Picture Reveal Game - Controller</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a1a;
+      color: white;
+      overflow: hidden;
+      height: 100vh;
+    }
+    .main-layout {
+      display: flex;
+      flex-direction: row;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 1rem;
+      height: 100vh;
+      box-sizing: border-box;
+      gap: 1.5rem;
+    }
+    .grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      grid-template-rows: repeat(4, 1fr);
+      gap: 0;
+      width: 70vw;
+      max-width: 700px;
+      aspect-ratio: 5 / 4;
+      border-radius: 10px;
+      overflow: hidden;
+      user-select: none;
+    }
+    .grid img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .square {
+      background: #2a2a2a;
+      border: 1px solid #1a1a1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: opacity 2s ease;
+      z-index: 2;
+      position: relative;
+      user-select: none;
+    }
+    .square.revealed {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .square.even { background-color: #3e8e41; }
+    .square:not(.even) { background-color: #6fcf97; }
+
+    .number {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      user-select: none;
+      font-weight: bold;
+      color: white;
+      font-size: 3.8rem;
+      pointer-events: none;
+      opacity: 1;
+      transition: opacity 1.5s ease;
+      line-height: 1;
+    }
+    .number.grow {
+      animation: grow-shrink 0.3s ease forwards;
+    }
+    @keyframes grow-shrink {
+      0% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.25); }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      align-items: center;
+      margin-top: 1rem;
+      z-index: 10;
+    }
+    .control-btn {
+      width: 180px;
+      height: 52px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      border-radius: 12px;
+      background: #333;
+      color: gold;
+      border: 2px solid gold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+    /* Keep the space where preview was */
+    .preview-placeholder {
+      width: 180px;
+      height: 100px;
+      margin-top: 1rem;
+      border: 2px solid transparent;
+      border-radius: 8px;
+    }
+
+    #star {
+      position: fixed;
+      font-size: 10rem;
+      color: gold;
+      text-shadow:
+        -2px -2px 5px #000,
+        2px -2px 5px #000,
+        -2px 2px 5px #000,
+        2px 2px 5px #000;
+      pointer-events: none;
+      user-select: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: all 1s ease, opacity 1s ease;
+      filter: drop-shadow(0 0 8px gold);
+    }
+
+    #uploadOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      color: gold;
+      display: none;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      font-size: 1.5rem;
+      font-weight: bold;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="main-layout">
+  <div class="grid" id="grid">
+    <img id="hiddenImage" src="" alt="Hidden picture" />
+  </div>
+  <div class="controls">
+    <button id="load-images" class="control-btn">📁 Load Images</button>
+    <button id="new-game" class="control-btn">🔄 New Game</button>
+    <button id="reveal-all" class="control-btn">👁️ Reveal All</button>
+    <button id="kiosk-mode" class="control-btn">🖥️ Kiosk Mode</button>
+    <div class="preview-placeholder"></div>
+  </div>
+</div>
+<div id="uploadOverlay">
+  <p>Drag & drop images here or click to select files.<br>Supported: JPG, PNG, GIF.</p>
+  <p><em>Press ESC to cancel</em></p>
+</div>
+<script>
+  const TOTAL_SQUARES = 20;
+  const grid = document.getElementById("grid");
+  const hiddenImage = document.getElementById("hiddenImage");
+  const newGameBtn = document.getElementById("new-game");
+  const revealAllBtn = document.getElementById("reveal-all");
+  const kioskModeBtn = document.getElementById("kiosk-mode");
+  const loadImagesBtn = document.getElementById("load-images");
+  const uploadOverlay = document.getElementById("uploadOverlay");
+  const channel = new BroadcastChannel('picture-reveal');
+
+  let starIndex;
+  let uploadedImages = [];
+  let usedImages = [];
+  let revealedSquares = [];
+
+  fileInputSetup();
+  initEventListeners();
+  initSync();
+
+  function fileInputSetup() {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.multiple = true;
+    fileInput.style.display = 'none';
+    document.body.appendChild(fileInput);
+
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+    loadImagesBtn.onclick = () => uploadOverlay.style.display = 'flex';
+    uploadOverlay.addEventListener('click', () => fileInput.click());
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') uploadOverlay.style.display = 'none';
+    });
+  }
+
+  function initEventListeners() {
+    newGameBtn.onclick = () => startNewGame();
+    revealAllBtn.onclick = () => revealAll();
+    kioskModeBtn.onclick = () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    };
+  }
+
+  function initSync() {
+    channel.onmessage = (e) => {
+      const data = e.data;
+      if (data.type === 'newGame') {
+        setupGrid(data.image, data.starIndex, []);
+      } else if (data.type === 'revealSquare') {
+        revealSquare(document.querySelector(`.square[data-index='${data.index}']`), true);
+      } else if (data.type === 'revealAll') {
+        revealAll(true);
+      } else if (data.type === 'showStar') {
+        showStar(document.querySelector(`.square[data-index='${data.index}']`));
+      } else if (data.type === 'syncState') {
+        setupGrid(data.image, data.starIndex, data.revealed);
+      }
+    };
+  }
+
+  function handleFiles(files) {
+    uploadedImages = Array.from(files).filter(f => f.type.startsWith('image/')).map(f => URL.createObjectURL(f));
+    usedImages = [];
+    if (!uploadedImages.length) {
+      alert('No valid image files.');
+      return;
+    }
+    uploadOverlay.style.display = 'none';
+    startNewGame();
+  }
+
+  function getNextImage() {
+    if (!uploadedImages.length) return '';
+    let available = uploadedImages.filter(img => !usedImages.includes(img));
+    if (!available.length) {
+      usedImages = [];
+      available = uploadedImages;
+    }
+    const img = available[Math.floor(Math.random() * available.length)];
+    usedImages.push(img);
+    return img;
+  }
+
+  function setupGrid(image, star, revealed = []) {
+    grid.querySelectorAll('.square').forEach(el => el.remove());
+    hiddenImage.src = image;
+    starIndex = star;
+    revealedSquares = [...revealed];
+    for (let i = 0; i < TOTAL_SQUARES; i++) {
+      const square = document.createElement('div');
+      square.className = 'square';
+      if (i % 2 === 0) square.classList.add('even');
+      square.dataset.index = i;
+
+      const number = document.createElement('span');
+      number.className = 'number';
+      number.textContent = (i + 1);
+      square.appendChild(number);
+
+      if (revealed.includes(i)) {
+        square.classList.add('revealed');
+        number.style.opacity = '0';
+      }
+
+      square.addEventListener('click', () => {
+        if (square.classList.contains('revealed')) return;
+        revealSquare(square);
+        channel.postMessage({ type: 'revealSquare', index: i });
+        if (i === starIndex) channel.postMessage({ type: 'showStar', index: i });
+      });
+
+      grid.appendChild(square);
+    }
+    animateNumbersIn();
+  }
+
+  function animateNumbersIn() {
+    const numbers = Array.from(document.querySelectorAll('.number'));
+    const indices = numbers.map((_, i) => i);
+    const delays = indices.map(() => Math.random());
+    const sorted = indices
+      .map((i, idx) => ({ i, delay: delays[idx] }))
+      .sort((a, b) => a.delay - b.delay);
+
+    sorted.forEach(({ i }, idx) => {
+      setTimeout(() => {
+        const num = numbers[i];
+        num.style.opacity = '1';
+        num.classList.add('grow');
+        setTimeout(() => num.classList.remove('grow'), 300);
+      }, (idx / TOTAL_SQUARES) * 2000);
+    });
+  }
+
+  function revealSquare(square, remote = false) {
+    if (!square || square.classList.contains('revealed')) return;
+    square.classList.add('revealed');
+    const index = parseInt(square.dataset.index);
+
+    const number = square.querySelector('.number');
+    if (number) {
+      number.style.transition = 'opacity 2s ease';
+      number.style.opacity = '0';
+    }
+
+    setTimeout(() => {
+      square.style.opacity = '0';
+      square.style.pointerEvents = 'none';
+    }, 2000);
+
+    if (!remote && !revealedSquares.includes(index)) revealedSquares.push(index);
+    if (index === starIndex) showStar(square);
+  }
+
+  function revealAll(remote = false) {
+    document.querySelectorAll('.square').forEach(sq => {
+      if (!sq.classList.contains('revealed')) {
+        revealSquare(sq, remote);
+      }
+    });
+    if (!remote) channel.postMessage({ type: 'revealAll' });
+  }
+
+  function showStar(square) {
+    const existing = document.getElementById('star');
+    if (existing) existing.remove();
+
+    const star = document.createElement('div');
+    star.id = 'star';
+    star.textContent = '★';
+    document.body.appendChild(star);
+
+    const rect = square.getBoundingClientRect();
+    star.style.left = `${rect.left + rect.width / 2}px`;
+    star.style.top = `${rect.top + rect.height / 2}px`;
+    star.style.transform = 'translate(-50%, -50%) scale(1)';
+    star.style.opacity = '1';
+
+    setTimeout(() => {
+      star.style.transition = 'all 1s ease';
+      star.style.left = `${window.innerWidth / 2}px`;
+      star.style.top = `${window.innerHeight / 2}px`;
+      star.style.transform = 'translate(-50%, -50%) scale(2)';
+    }, 50);
+
+    setTimeout(() => {
+      star.style.transition = 'all 2s ease';
+      const controls = document.querySelector('.controls');
+      const ctrlRect = controls.getBoundingClientRect();
+      star.style.left = `${ctrlRect.left + ctrlRect.width / 2}px`;
+      star.style.top = `${ctrlRect.bottom + 30}px`;
+      star.style.transform = 'translate(-50%, 0) scale(1)';
+    }, 1050);
+  }
+
+  function startNewGame() {
+    const existingStar = document.getElementById('star');
+    if (existingStar) existingStar.remove();
+
+    const image = getNextImage();
+    if (!image) {
+      alert('Upload images first!');
+      return;
+    }
+    const star = Math.floor(Math.random() * TOTAL_SQUARES);
+    revealedSquares = [];
+    setupGrid(image, star);
+    channel.postMessage({ type: 'newGame', image, starIndex: star });
+  }
+</script>
+</body>
+</html>
